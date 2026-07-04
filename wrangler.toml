@@ -1,0 +1,44 @@
+name = "aj-sports-unified-worker"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+# ------------------------------------------------------------------
+# KV Namespace — یک namespace مشترک برای هر دو فرانت (پروفایل + پیش‌بینی)
+# مراحل ساخت:
+#   1) npx wrangler kv namespace create AJ_SPORTS_KV
+#   2) خروجی دستور بالا یک id می‌دهد؛ آن را جای YOUR_KV_NAMESPACE_ID زیر بگذار
+# ------------------------------------------------------------------
+[[kv_namespaces]]
+binding = "KV_STORE"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# ------------------------------------------------------------------
+# متغیرهای غیر حساس (Non-secret vars) — این‌ها همینجا commit می‌شوند
+# ------------------------------------------------------------------
+[vars]
+ENVIRONMENT = "production"
+SUPABASE_URL = "https://ivgsmoszivukvdegquxp.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2Z3Ntb3N6aXZ1a3ZkZWdxdXhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5Mzg0NDQsImV4cCI6MjA3MzUxNDQ0NH0.B0UslNCyxba9uMs80DDGQ0XfQQsSE3THHfsSDaG9V8o"
+CLOUDINARY_CLOUD = "dwgagoxp1"
+ADMIN_EMAIL = "you@example.com"
+
+# ------------------------------------------------------------------
+# متغیرهای حساس (Secrets) — هرگز این‌ها را در این فایل ننویس!
+# پس از deploy با دستورات زیر (یا در Cloudflare Dashboard → Settings → Variables) ست کن:
+#
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put CLOUDINARY_API_KEY
+#   npx wrangler secret put CLOUDINARY_API_SECRET
+#   npx wrangler secret put FOOTBALL_API_KEY
+#
+# مقادیر پیشنهادی بر اساس چیزی که فرستادی:
+#   JWT_SECRET           = a7f3k9m2p8q1r5s6t4u0v3w7x2y8z1b4c6d9e3f0g5h2i7j1k4l8m3n6o0
+#   CLOUDINARY_API_KEY    = 133761274833544
+#   CLOUDINARY_API_SECRET = 4_xMkJj7qkJhk97ArDJo-awZvSY
+#   FOOTBALL_API_KEY      = 3e005c1a61fca98cfb09f2c90b55bcefe5c9e4119a9ba8dbfa32d35bb0a5988f
+#
+# نکته: SUPABASE_SERVICE_KEY و SUPABASE_JWT_SECRET که فرستادی توسط این ورکر
+# استفاده نمی‌شوند، چون احراز هویت با توکن‌های امضاشده‌ی خودِ ورکر (JWT_SECRET)
+# انجام می‌شود، نه توکن خام Supabase. اگر بعداً خواستی مستقیم از Supabase Auth
+# session استفاده کنی، آن secretها را هم می‌توانی اضافه کنی.
+# ------------------------------------------------------------------
