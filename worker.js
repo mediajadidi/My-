@@ -1,9 +1,3 @@
-// ============================================
-// 🎥 AJ Sports Video Platform
-// 🌐 videos.ajsports.ir
-// ⚡ بدون فیلتر - مستقیم از googlevideo.com
-// ============================================
-
 const YOUTUBE_API_KEY = 'AIzaSyCKBbpYov7TL3DzxhzuAzGq1ujkp77dHtU';
 
 const CHANNELS = {
@@ -13,21 +7,7 @@ const CHANNELS = {
   laliga: 'UCT9dx7j32tq4V2YQq4QoFkA',
   bundesliga: 'UCGAjv7E8ahcHDKr7aJ7_8RQ',
   afc: 'UCjIVZgJdBYZ4FXyH7JwXGKA',
-  nbcsports: 'UCqZQJzTlJ8PkLhxGvVXtQGw',
-  espnfc: 'UCnRdZ6TlRzVHNYQrYS4ZxOQ',
-  btsport: 'UCtK5Q7fRqFPgkW9gCkzXntg',
-  beinsports: 'UCzjDhjBEqYpQnjtHGnRpBxQ',
-  skysports: 'UCNAf1k0yIxGuF9VQoMJkqLA',
-  hayterstv: 'UCWPgDMOFnflnCjxJh8MxhDw',
-  efl: 'UCBWj8VXE4qK-FLDVtNrGi3g',
-  cbssports: 'UCb7C8FQwGJNjPnTKmNKo7dA',
-  foxsoccer: 'UCqRPnK2L4Q2Xo8mBQyBzNcA',
-  tntsports: 'UCKkrGz7kD7jFqRQYHqXyPHA'
 };
-
-const MAX_RESULTS = 15;
-const CACHE_TTL = 1800;
-const MAX_TOTAL_VIDEOS = 80;
 
 export default {
   async fetch(request, env, ctx) {
@@ -36,121 +16,57 @@ export default {
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': '*',
+      'Content-Type': 'application/json'
     };
 
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
-    }
-
-    // ============ API: دریافت لیست ویدیوها ============
+    // API: لیست ویدیوها
     if (path === '/api/videos') {
       try {
-        const cacheKey = 'videos_cache_googlevideo';
-        const cached = await env.VIDEO_CACHE.get(cacheKey);
-        
-        if (cached) {
-          return new Response(cached, {
-            headers: {
-              ...corsHeaders,
-              'Content-Type': 'application/json; charset=utf-8',
-              'X-Cache': 'HIT'
-            }
-          });
-        }
-
         const allVideos = [];
-        const fetchPromises = Object.entries(CHANNELS).map(async ([name, id]) => {
-          try {
-            const videos = await fetchChannelVideos(id, name);
-            return videos;
-          } catch (e) {
-            console.error(`Error fetching ${name}:`, e.message);
-            return [];
-          }
-        });
-
-        const results = await Promise.allSettled(fetchPromises);
         
-        results.forEach(result => {
-          if (result.status === 'fulfilled') {
-            allVideos.push(...result.value);
-          }
-        });
-
+        for (const [name, id] of Object.entries(CHANNELS)) {
+          const videos = await fetchChannelVideos(id, name);
+          allVideos.push(...videos);
+        }
+        
         allVideos.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
         
-        const finalVideos = allVideos.slice(0, MAX_TOTAL_VIDEOS);
-        
-        const response = {
-          success: true,
-          lastUpdated: new Date().toISOString(),
-          totalChannels: Object.keys(CHANNELS).length,
-          totalVideos: finalVideos.length,
-          videos: finalVideos
-        };
-
-        const jsonResponse = JSON.stringify(response);
-        
-        ctx.waitUntil(
-          env.VIDEO_CACHE.put(cacheKey, jsonResponse, { 
-            expirationTtl: CACHE_TTL 
-          })
-        );
-
-        return new Response(jsonResponse, {
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json; charset=utf-8',
-            'X-Cache': 'MISS'
-          }
-        });
-
-      } catch (error) {
         return new Response(JSON.stringify({
-          success: false,
-          error: error.message
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json; charset=utf-8' }
+          success: true,
+          videos: allVideos.slice(0, 30)
+        }), { headers: corsHeaders });
+        
+      } catch(e) {
+        return new Response(JSON.stringify({ success: false, error: e.message }), { 
+          status: 500, headers: corsHeaders 
         });
       }
     }
 
-    // ============ دریافت لینک مستقیم ویدیو ============
-    if (path.startsWith('/get-video/')) {
-      const videoId = path.split('/get-video/')[1];
-      if (!videoId) {
-        return new Response('Video ID required', { status: 400 });
-      }
+    // API: گرفتن لینک مستقیم ویدیو
+    if (path.startsWith('/video/')) {
+      const videoId = path.split('/video/')[1];
       
       try {
         const videoUrl = await getDirectVideoUrl(videoId);
         
-        if (!videoUrl) {
-          return new Response('Video not available', { status: 404 });
+        if (videoUrl) {
+          // ریدایرکت به لینک مستقیم googlevideo.com
+          return Response.redirect(videoUrl, 302);
+        } else {
+          // اگر نشد، ریدایرکت به یوتیوب
+          return Response.redirect(`https://www.youtube.com/watch?v=${videoId}`, 302);
         }
         
-        return new Response(JSON.stringify({ url: videoUrl }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-        
-      } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+      } catch(e) {
+        return Response.redirect(`https://www.youtube.com/watch?v=${videoId}`, 302);
       }
     }
 
-    // ============ صفحه اصلی ============
-    if (path === '/' || path === '/videos' || path === '/index.html') {
-      return new Response(generateMainPage(), {
-        headers: { 
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600'
-        }
+    // صفحه اصلی
+    if (path === '/' || path === '/index.html') {
+      return new Response(HTML_PAGE, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
       });
     }
 
@@ -158,7 +74,6 @@ export default {
   }
 };
 
-// دریافت اطلاعات ویدیوها از کانال
 async function fetchChannelVideos(channelId, channelName) {
   const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`;
   
@@ -172,7 +87,7 @@ async function fetchChannelVideos(channelId, channelName) {
   const uploadsPlaylistId = channel.contentDetails.relatedPlaylists.uploads;
   const channelTitle = channel.snippet.title;
   
-  const videosUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${MAX_RESULTS}&playlistId=${uploadsPlaylistId}&key=${YOUTUBE_API_KEY}`;
+  const videosUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=10&playlistId=${uploadsPlaylistId}&key=${YOUTUBE_API_KEY}`;
   
   const videosResponse = await fetch(videosUrl);
   if (!videosResponse.ok) return [];
@@ -186,60 +101,47 @@ async function fetchChannelVideos(channelId, channelName) {
     description: item.snippet.description?.slice(0, 200) || '',
     thumbnail: item.snippet.thumbnails?.maxres?.url || 
                item.snippet.thumbnails?.high?.url || 
-               item.snippet.thumbnails?.medium?.url ||
-               item.snippet.thumbnails?.default?.url,
+               item.snippet.thumbnails?.medium?.url,
     channelName: channelName,
     channelTitle: channelTitle,
     publishedAt: item.snippet.publishedAt,
+    directUrl: `/video/${item.snippet.resourceId.videoId}`
   }));
 }
 
-// دریافت لینک مستقیم ویدیو از googlevideo.com
 async function getDirectVideoUrl(videoId) {
   try {
-    // استفاده از InnerTube API برای گرفتن لینک مستقیم
     const response = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         videoId: videoId,
         context: {
           client: {
             clientName: 'ANDROID',
             clientVersion: '19.09.37',
-            androidSdkVersion: 30,
-            userAgent: 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
+            androidSdkVersion: 30
           }
         }
       })
     });
     
-    if (!response.ok) return null;
-    
     const data = await response.json();
+    const formats = data?.streamingData?.formats || data?.streamingData?.adaptiveFormats || [];
     
-    // پیدا کردن بهترین کیفیت (ترجیحاً 720p)
-    const formats = data?.streamingData?.formats || 
-                    data?.streamingData?.adaptiveFormats || [];
+    // کیفیت 360p یا 720p
+    const format = formats.find(f => f.height === 360 && f.mimeType?.includes('video/mp4')) ||
+                   formats.find(f => f.height === 720 && f.mimeType?.includes('video/mp4')) ||
+                   formats[0];
     
-    const videoFormat = formats
-      .filter(f => f.mimeType?.includes('video/mp4'))
-      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
-      .find(f => (f.height || 0) <= 720) || formats[0];
+    return format?.url || null;
     
-    return videoFormat?.url || null;
-    
-  } catch (error) {
-    console.error('Error getting video URL:', error);
+  } catch(e) {
     return null;
   }
 }
 
-function generateMainPage() {
-  return `<!DOCTYPE html>
+const HTML_PAGE = `<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
@@ -277,7 +179,7 @@ function generateMainPage() {
     
     .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
     
-    .main-player-section {
+    .player-section {
       background: #000;
       border-radius: 16px;
       overflow: hidden;
@@ -285,13 +187,13 @@ function generateMainPage() {
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
     
-    .video-wrapper {
+    .player-wrapper {
       position: relative;
       padding-top: 56.25%;
       background: #000;
     }
     
-    .video-wrapper video {
+    .player-wrapper video {
       position: absolute;
       top: 0;
       left: 0;
@@ -300,7 +202,7 @@ function generateMainPage() {
       outline: none;
     }
     
-    .video-wrapper .placeholder {
+    .player-placeholder {
       position: absolute;
       top: 0;
       left: 0;
@@ -310,15 +212,15 @@ function generateMainPage() {
       align-items: center;
       justify-content: center;
       background: #1a1a3e;
+      text-align: center;
     }
     
-    .video-details {
+    .video-info {
       padding: 20px;
       background: rgba(255,255,255,0.05);
-      backdrop-filter: blur(10px);
     }
     
-    .video-details h2 { font-size: 1.5em; margin-bottom: 10px; color: #fff; }
+    .video-info h2 { font-size: 1.5em; margin-bottom: 10px; }
     
     .meta-info {
       display: flex;
@@ -333,30 +235,6 @@ function generateMainPage() {
       padding: 5px 15px;
       border-radius: 20px;
     }
-    
-    .stats-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    
-    .stats-bar .count { color: #ffd93d; font-size: 1.1em; }
-    
-    .refresh-btn {
-      background: linear-gradient(45deg, #ff6b6b, #ee5a24);
-      color: white;
-      border: none;
-      padding: 10px 25px;
-      border-radius: 25px;
-      cursor: pointer;
-      font-size: 1em;
-      transition: transform 0.2s;
-    }
-    
-    .refresh-btn:hover { transform: scale(1.05); }
     
     .video-grid {
       display: grid;
@@ -381,14 +259,12 @@ function generateMainPage() {
     
     .video-card.active {
       border-color: #ffd93d;
-      box-shadow: 0 0 20px rgba(255,217,61,0.2);
     }
     
     .thumbnail {
       position: relative;
       padding-top: 56.25%;
       background: #1a1a3e;
-      overflow: hidden;
     }
     
     .thumbnail img {
@@ -398,10 +274,7 @@ function generateMainPage() {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transition: transform 0.3s;
     }
-    
-    .video-card:hover .thumbnail img { transform: scale(1.05); }
     
     .play-overlay {
       position: absolute;
@@ -410,18 +283,12 @@ function generateMainPage() {
       transform: translate(-50%, -50%);
       width: 60px;
       height: 60px;
-      background: rgba(0,0,0,0.7);
+      background: rgba(255,0,0,0.8);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 24px;
-      transition: all 0.3s;
-    }
-    
-    .video-card:hover .play-overlay {
-      background: #ff6b6b;
-      transform: translate(-50%, -50%) scale(1.1);
     }
     
     .card-content { padding: 15px; }
@@ -429,7 +296,6 @@ function generateMainPage() {
     .card-content h3 {
       font-size: 1em;
       margin-bottom: 10px;
-      line-height: 1.4;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
@@ -439,23 +305,25 @@ function generateMainPage() {
     .card-meta {
       display: flex;
       justify-content: space-between;
-      align-items: center;
       font-size: 0.8em;
       color: #aaa;
-      flex-wrap: wrap;
-      gap: 5px;
     }
     
-    .channel-badge {
-      background: linear-gradient(45deg, #ff6b6b, #ffd93d);
-      color: #000;
-      padding: 3px 10px;
-      border-radius: 15px;
-      font-weight: bold;
-      font-size: 0.75em;
+    .btn {
+      background: #ff0000;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 30px;
+      cursor: pointer;
+      font-size: 1.1em;
+      margin-top: 10px;
+      display: inline-block;
     }
     
-    .loading { text-align: center; padding: 60px 20px; }
+    .btn:hover { background: #cc0000; }
+    
+    .loading { text-align: center; padding: 60px; }
     
     .spinner {
       width: 50px;
@@ -472,37 +340,15 @@ function generateMainPage() {
       100% { transform: rotate(360deg); }
     }
     
-    .error { text-align: center; padding: 60px 20px; color: #ff6b6b; }
-    
-    .btn-play {
-      display: inline-block;
-      background: #ff0000;
-      color: white;
-      padding: 12px 30px;
-      border-radius: 30px;
-      text-decoration: none;
-      font-size: 1.1em;
-      margin-top: 15px;
-      cursor: pointer;
-      border: none;
-      transition: transform 0.2s;
-    }
-    
-    .btn-play:hover {
-      transform: scale(1.05);
-    }
-    
     @media (max-width: 768px) {
       .header h1 { font-size: 1.8em; }
       .video-grid { grid-template-columns: 1fr; }
-      .container { padding: 10px; }
     }
     
     footer {
       text-align: center;
-      padding: 40px 20px;
+      padding: 40px;
       color: #666;
-      font-size: 0.9em;
     }
   </style>
 </head>
@@ -513,33 +359,26 @@ function generateMainPage() {
   </div>
   
   <div class="container">
-    <!-- Main Player -->
-    <div class="main-player-section">
-      <div class="video-wrapper" id="playerContainer">
-        <div class="placeholder">
-          <div style="text-align:center;color:#aaa;">
+    <!-- Player -->
+    <div class="player-section">
+      <div class="player-wrapper" id="playerContainer">
+        <div class="player-placeholder">
+          <div>
             <div style="font-size:4em;">🎬</div>
             <p style="margin-top:10px;">یک ویدیو انتخاب کنید</p>
-            <p style="font-size:0.8em;margin-top:5px;">بدون فیلتر و تبلیغات</p>
           </div>
         </div>
       </div>
-      <div class="video-details">
+      <div class="video-info">
         <h2 id="videoTitle">🎬 یک ویدیو انتخاب کنید</h2>
         <div class="meta-info">
           <span id="channelInfo">📺 کانال</span>
           <span id="dateInfo">📅 تاریخ</span>
         </div>
-        <button id="btnPlay" class="btn-play" style="display:none;" onclick="playVideo()">
+        <button class="btn" id="playBtn" style="display:none;" onclick="playSelectedVideo()">
           ▶️ پخش ویدیو
         </button>
       </div>
-    </div>
-    
-    <!-- Stats & Refresh -->
-    <div class="stats-bar">
-      <div class="count" id="videoCount">📊 در حال بارگذاری...</div>
-      <button class="refresh-btn" onclick="loadVideos()">🔄 بروزرسانی</button>
     </div>
     
     <!-- Video Grid -->
@@ -552,36 +391,26 @@ function generateMainPage() {
   </div>
   
   <footer>
-    <p>© 2026 AJ Sports | تمامی حقوق محفوظ است</p>
+    <p>© 2026 AJ Sports</p>
   </footer>
   
   <script>
-    const API_URL = '/api/videos';
-    let currentVideoData = null;
+    let selectedVideo = null;
     
     async function loadVideos() {
-      const grid = document.getElementById('videoGrid');
-      grid.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری...</p></div>';
-      
       try {
-        const response = await fetch(API_URL);
-        if (!response.ok) throw new Error('Network error');
-        
-        const data = await response.json();
+        const res = await fetch('/api/videos');
+        const data = await res.json();
         
         if (!data.success || !data.videos.length) {
-          grid.innerHTML = '<div class="error"><h3>⚠️ خطا</h3><p>ویدیویی یافت نشد</p></div>';
+          document.getElementById('videoGrid').innerHTML = '<div class="loading"><p>ویدیویی یافت نشد</p></div>';
           return;
         }
         
-        document.getElementById('videoCount').textContent = 
-          \`📊 \${data.totalVideos} ویدیو از \${data.totalChannels} کانال\`;
-        
         renderVideos(data.videos);
         
-      } catch (error) {
-        grid.innerHTML = '<div class="error"><h3>⚠️ خطا در بارگذاری</h3><p>لطفاً دوباره تلاش کنید</p></div>';
-        console.error('Error:', error);
+      } catch(e) {
+        document.getElementById('videoGrid').innerHTML = '<div class="loading"><p>خطا در بارگذاری</p></div>';
       }
     }
     
@@ -589,27 +418,22 @@ function generateMainPage() {
       const grid = document.getElementById('videoGrid');
       grid.innerHTML = '';
       
-      videos.forEach((video, index) => {
+      videos.forEach(video => {
         const card = document.createElement('div');
         card.className = 'video-card';
         card.onclick = () => selectVideo(video, card);
         
-        const date = new Date(video.publishedAt).toLocaleDateString('fa-IR', {
-          year: 'numeric', month: 'long', day: 'numeric'
-        });
+        const date = new Date(video.publishedAt).toLocaleDateString('fa-IR');
         
         card.innerHTML = \`
           <div class="thumbnail">
-            <img src="\${video.thumbnail}" alt="\${video.title}" 
-                 loading="lazy" 
-                 onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22169%22><rect fill=%22%231a1a3e%22 width=%22300%22 height=%22169%22/><text fill=%22%23fff%22 x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2220%22>🎬</text></svg>'">
+            <img src="\${video.thumbnail}" alt="\${video.title}" loading="lazy">
             <div class="play-overlay">▶</div>
           </div>
           <div class="card-content">
             <h3>\${video.title}</h3>
             <div class="card-meta">
               <span>\${video.channelTitle}</span>
-              <span class="channel-badge">\${getChannelNameFa(video.channelName)}</span>
               <span>\${date}</span>
             </div>
           </div>
@@ -619,92 +443,67 @@ function generateMainPage() {
       });
     }
     
-    function selectVideo(video, cardElement) {
-      currentVideoData = video;
+    function selectVideo(video, card) {
+      selectedVideo = video;
       
       document.getElementById('videoTitle').textContent = video.title;
-      document.getElementById('channelInfo').textContent = \`📺 \${video.channelTitle}\`;
+      document.getElementById('channelInfo').textContent = '📺 ' + video.channelTitle;
+      document.getElementById('dateInfo').textContent = '📅 ' + new Date(video.publishedAt).toLocaleDateString('fa-IR');
+      document.getElementById('playBtn').style.display = 'inline-block';
       
-      const date = new Date(video.publishedAt).toLocaleDateString('fa-IR', {
-        year: 'numeric', month: 'long', day: 'numeric'
-      });
-      document.getElementById('dateInfo').textContent = \`📅 \${date}\`;
+      document.querySelectorAll('.video-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
       
-      // نشون دادن دکمه پخش
-      document.getElementById('btnPlay').style.display = 'inline-block';
-      
-      // آپدیت thumbnail
-      const container = document.getElementById('playerContainer');
-      container.innerHTML = \`
-        <img src="\${video.thumbnail}" 
-             style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;"
-             alt="\${video.title}">
+      // Show thumbnail
+      document.getElementById('playerContainer').innerHTML = \`
+        <img src="\${video.thumbnail}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;">
         <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
-          <div style="width:80px;height:80px;background:rgba(255,0,0,0.8);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;">
-            ▶
-          </div>
+          <div style="width:80px;height:80px;background:rgba(255,0,0,0.8);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;">▶</div>
         </div>
       \`;
-      
-      // هایلایت کارت
-      document.querySelectorAll('.video-card').forEach(c => c.classList.remove('active'));
-      if (cardElement) cardElement.classList.add('active');
     }
     
-    async function playVideo() {
-      if (!currentVideoData) return;
+    async function playSelectedVideo() {
+      if (!selectedVideo) return;
       
       const container = document.getElementById('playerContainer');
-      container.innerHTML = '<div class="placeholder"><div class="spinner"></div><p>در حال دریافت ویدیو...</p></div>';
+      container.innerHTML = '<div class="player-placeholder"><div class="spinner"></div><p>در حال دریافت ویدیو...</p></div>';
       
       try {
-        // دریافت لینک مستقیم از googlevideo.com
-        const response = await fetch(\`/get-video/\${currentVideoData.id}\`);
-        const data = await response.json();
+        // First try to get direct URL
+        const urlRes = await fetch('/video/' + selectedVideo.id, { redirect: 'manual' });
         
-        if (!data.url) {
-          container.innerHTML = '<div class="placeholder"><p>⚠️ خطا در دریافت ویدیو</p></div>';
-          return;
+        if (urlRes.status === 302 || urlRes.status === 301) {
+          const directUrl = urlRes.headers.get('Location');
+          
+          container.innerHTML = \`
+            <video controls autoplay playsinline 
+                   style="position:absolute;top:0;left:0;width:100%;height:100%;">
+              <source src="\${directUrl}" type="video/mp4">
+              مرورگر شما از پخش ویدیو پشتیبانی نمی‌کند
+            </video>
+          \`;
+        } else {
+          // Fallback: open YouTube
+          window.open('https://www.youtube.com/watch?v=' + selectedVideo.id, '_blank');
+          container.innerHTML = \`
+            <div class="player-placeholder">
+              <div>
+                <p>ویدیو در یوتیوب باز شد</p>
+                <button class="btn" onclick="window.open('https://www.youtube.com/watch?v=\${selectedVideo.id}', '_blank')">
+                  🔄 تلاش مجدد
+                </button>
+              </div>
+            </div>
+          \`;
         }
         
-        // پخش ویدیو
-        container.innerHTML = \`
-          <video controls autoplay playsinline 
-                 style="position:absolute;top:0;left:0;width:100%;height:100%;">
-            <source src="\${data.url}" type="video/mp4">
-          </video>
-        \`;
-        
-      } catch (error) {
-        container.innerHTML = '<div class="placeholder"><p>⚠️ خطا در پخش ویدیو</p></div>';
+      } catch(e) {
+        container.innerHTML = '<div class="player-placeholder"><p>⚠️ خطا در پخش ویدیو</p></div>';
       }
     }
     
-    function getChannelNameFa(channelName) {
-      const names = {
-        fifa: '🏆 فیفا',
-        premierleague: '🏴 لیگ برتر',
-        uefa: '⭐ لیگ قهرمانان',
-        laliga: '🇪🇸 لالیگا',
-        bundesliga: '🇩🇪 بوندسلیگا',
-        afc: '🌏 لیگ قهرمانان آسیا',
-        nbcsports: 'NBC',
-        espnfc: 'ESPN',
-        btsport: 'BT Sport',
-        beinsports: 'beIN',
-        skysports: 'Sky Sports',
-        hayterstv: 'HaytersTV',
-        efl: 'EFL',
-        cbssports: 'CBS Sports',
-        foxsoccer: 'FOX Soccer',
-        tntsports: 'TNT Sports'
-      };
-      return names[channelName] || channelName;
-    }
-    
     loadVideos();
-    setInterval(loadVideos, 1800000);
   </script>
 </body>
 </html>`;
-        }
