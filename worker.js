@@ -1,6 +1,7 @@
 // ============================================
-// 🎥 AJ Sports Video Platform - Cloudflare Worker
-// 🌐 Domain: videos.ajsports.ir
+// 🎥 AJ Sports Video Platform
+// 🌐 videos.ajsports.ir
+// ⚡ بدون فیلتر - مستقیم از googlevideo.com
 // ============================================
 
 const YOUTUBE_API_KEY = 'AIzaSyCKBbpYov7TL3DzxhzuAzGq1ujkp77dHtU';
@@ -46,12 +47,11 @@ export default {
     // ============ API: دریافت لیست ویدیوها ============
     if (path === '/api/videos') {
       try {
-        const cacheKey = 'videos_cache_v2';
+        const cacheKey = 'videos_cache_googlevideo';
         const cached = await env.VIDEO_CACHE.get(cacheKey);
         
         if (cached) {
-          const data = JSON.parse(cached);
-          return new Response(JSON.stringify(data), {
+          return new Response(cached, {
             headers: {
               ...corsHeaders,
               'Content-Type': 'application/json; charset=utf-8',
@@ -118,6 +118,32 @@ export default {
       }
     }
 
+    // ============ دریافت لینک مستقیم ویدیو ============
+    if (path.startsWith('/get-video/')) {
+      const videoId = path.split('/get-video/')[1];
+      if (!videoId) {
+        return new Response('Video ID required', { status: 400 });
+      }
+      
+      try {
+        const videoUrl = await getDirectVideoUrl(videoId);
+        
+        if (!videoUrl) {
+          return new Response('Video not available', { status: 404 });
+        }
+        
+        return new Response(JSON.stringify({ url: videoUrl }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+        
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     // ============ صفحه اصلی ============
     if (path === '/' || path === '/videos' || path === '/index.html') {
       return new Response(generateMainPage(), {
@@ -128,61 +154,87 @@ export default {
       });
     }
 
-    // ============ Health Check ============
-    if (path === '/health') {
-      return new Response(JSON.stringify({
-        status: 'healthy',
-        timestamp: new Date().toISOString()
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     return new Response('Not Found', { status: 404 });
   }
 };
 
+// دریافت اطلاعات ویدیوها از کانال
 async function fetchChannelVideos(channelId, channelName) {
+  const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+  
+  const channelResponse = await fetch(channelUrl);
+  if (!channelResponse.ok) return [];
+  
+  const channelData = await channelResponse.json();
+  if (!channelData.items?.length) return [];
+  
+  const channel = channelData.items[0];
+  const uploadsPlaylistId = channel.contentDetails.relatedPlaylists.uploads;
+  const channelTitle = channel.snippet.title;
+  
+  const videosUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${MAX_RESULTS}&playlistId=${uploadsPlaylistId}&key=${YOUTUBE_API_KEY}`;
+  
+  const videosResponse = await fetch(videosUrl);
+  if (!videosResponse.ok) return [];
+  
+  const videosData = await videosResponse.json();
+  if (!videosData.items?.length) return [];
+  
+  return videosData.items.map(item => ({
+    id: item.snippet.resourceId.videoId,
+    title: item.snippet.title,
+    description: item.snippet.description?.slice(0, 200) || '',
+    thumbnail: item.snippet.thumbnails?.maxres?.url || 
+               item.snippet.thumbnails?.high?.url || 
+               item.snippet.thumbnails?.medium?.url ||
+               item.snippet.thumbnails?.default?.url,
+    channelName: channelName,
+    channelTitle: channelTitle,
+    publishedAt: item.snippet.publishedAt,
+  }));
+}
+
+// دریافت لینک مستقیم ویدیو از googlevideo.com
+async function getDirectVideoUrl(videoId) {
   try {
-    const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+    // استفاده از InnerTube API برای گرفتن لینک مستقیم
+    const response = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      body: JSON.stringify({
+        videoId: videoId,
+        context: {
+          client: {
+            clientName: 'ANDROID',
+            clientVersion: '19.09.37',
+            androidSdkVersion: 30,
+            userAgent: 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
+          }
+        }
+      })
+    });
     
-    const channelResponse = await fetch(channelUrl);
-    if (!channelResponse.ok) return [];
+    if (!response.ok) return null;
     
-    const channelData = await channelResponse.json();
-    if (!channelData.items?.length) return [];
+    const data = await response.json();
     
-    const channel = channelData.items[0];
-    const uploadsPlaylistId = channel.contentDetails.relatedPlaylists.uploads;
-    const channelTitle = channel.snippet.title;
+    // پیدا کردن بهترین کیفیت (ترجیحاً 720p)
+    const formats = data?.streamingData?.formats || 
+                    data?.streamingData?.adaptiveFormats || [];
     
-    const videosUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${MAX_RESULTS}&playlistId=${uploadsPlaylistId}&key=${YOUTUBE_API_KEY}`;
+    const videoFormat = formats
+      .filter(f => f.mimeType?.includes('video/mp4'))
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
+      .find(f => (f.height || 0) <= 720) || formats[0];
     
-    const videosResponse = await fetch(videosUrl);
-    if (!videosResponse.ok) return [];
-    
-    const videosData = await videosResponse.json();
-    if (!videosData.items?.length) return [];
-    
-    return videosData.items.map(item => ({
-      id: item.snippet.resourceId.videoId,
-      title: item.snippet.title,
-      description: item.snippet.description?.slice(0, 200) || '',
-      thumbnail: item.snippet.thumbnails?.maxres?.url || 
-                 item.snippet.thumbnails?.high?.url || 
-                 item.snippet.thumbnails?.medium?.url ||
-                 item.snippet.thumbnails?.default?.url,
-      channelId: channelId,
-      channelName: channelName,
-      channelTitle: channelTitle,
-      publishedAt: item.snippet.publishedAt,
-      embedUrl: `https://www.youtube-nocookie.com/embed/${item.snippet.resourceId.videoId}?autoplay=1`,
-      youtubeUrl: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}`
-    }));
+    return videoFormat?.url || null;
     
   } catch (error) {
-    console.error(`Failed to fetch channel ${channelName}:`, error);
-    return [];
+    console.error('Error getting video URL:', error);
+    return null;
   }
 }
 
@@ -239,13 +291,25 @@ function generateMainPage() {
       background: #000;
     }
     
-    .video-wrapper iframe {
+    .video-wrapper video {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      border: none;
+      outline: none;
+    }
+    
+    .video-wrapper .placeholder {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a3e;
     }
     
     .video-details {
@@ -410,6 +474,24 @@ function generateMainPage() {
     
     .error { text-align: center; padding: 60px 20px; color: #ff6b6b; }
     
+    .btn-play {
+      display: inline-block;
+      background: #ff0000;
+      color: white;
+      padding: 12px 30px;
+      border-radius: 30px;
+      text-decoration: none;
+      font-size: 1.1em;
+      margin-top: 15px;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.2s;
+    }
+    
+    .btn-play:hover {
+      transform: scale(1.05);
+    }
+    
     @media (max-width: 768px) {
       .header h1 { font-size: 1.8em; }
       .video-grid { grid-template-columns: 1fr; }
@@ -433,12 +515,14 @@ function generateMainPage() {
   <div class="container">
     <!-- Main Player -->
     <div class="main-player-section">
-      <div class="video-wrapper">
-        <iframe id="mainPlayer" 
-                src="" 
-                allow="autoplay; encrypted-media" 
-                allowfullscreen>
-        </iframe>
+      <div class="video-wrapper" id="playerContainer">
+        <div class="placeholder">
+          <div style="text-align:center;color:#aaa;">
+            <div style="font-size:4em;">🎬</div>
+            <p style="margin-top:10px;">یک ویدیو انتخاب کنید</p>
+            <p style="font-size:0.8em;margin-top:5px;">بدون فیلتر و تبلیغات</p>
+          </div>
+        </div>
       </div>
       <div class="video-details">
         <h2 id="videoTitle">🎬 یک ویدیو انتخاب کنید</h2>
@@ -446,6 +530,9 @@ function generateMainPage() {
           <span id="channelInfo">📺 کانال</span>
           <span id="dateInfo">📅 تاریخ</span>
         </div>
+        <button id="btnPlay" class="btn-play" style="display:none;" onclick="playVideo()">
+          ▶️ پخش ویدیو
+        </button>
       </div>
     </div>
     
@@ -470,6 +557,7 @@ function generateMainPage() {
   
   <script>
     const API_URL = '/api/videos';
+    let currentVideoData = null;
     
     async function loadVideos() {
       const grid = document.getElementById('videoGrid');
@@ -504,7 +592,7 @@ function generateMainPage() {
       videos.forEach((video, index) => {
         const card = document.createElement('div');
         card.className = 'video-card';
-        card.onclick = () => playVideo(video, card);
+        card.onclick = () => selectVideo(video, card);
         
         const date = new Date(video.publishedAt).toLocaleDateString('fa-IR', {
           year: 'numeric', month: 'long', day: 'numeric'
@@ -529,16 +617,10 @@ function generateMainPage() {
         
         grid.appendChild(card);
       });
-      
-      if (videos.length > 0) {
-        const firstCard = grid.querySelector('.video-card');
-        playVideo(videos[0], firstCard);
-      }
     }
     
-    function playVideo(video, cardElement) {
-      const player = document.getElementById('mainPlayer');
-      player.src = video.embedUrl;
+    function selectVideo(video, cardElement) {
+      currentVideoData = video;
       
       document.getElementById('videoTitle').textContent = video.title;
       document.getElementById('channelInfo').textContent = \`📺 \${video.channelTitle}\`;
@@ -548,9 +630,53 @@ function generateMainPage() {
       });
       document.getElementById('dateInfo').textContent = \`📅 \${date}\`;
       
+      // نشون دادن دکمه پخش
+      document.getElementById('btnPlay').style.display = 'inline-block';
+      
+      // آپدیت thumbnail
+      const container = document.getElementById('playerContainer');
+      container.innerHTML = \`
+        <img src="\${video.thumbnail}" 
+             style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;"
+             alt="\${video.title}">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
+          <div style="width:80px;height:80px;background:rgba(255,0,0,0.8);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;">
+            ▶
+          </div>
+        </div>
+      \`;
+      
+      // هایلایت کارت
       document.querySelectorAll('.video-card').forEach(c => c.classList.remove('active'));
-      if (cardElement) {
-        cardElement.classList.add('active');
+      if (cardElement) cardElement.classList.add('active');
+    }
+    
+    async function playVideo() {
+      if (!currentVideoData) return;
+      
+      const container = document.getElementById('playerContainer');
+      container.innerHTML = '<div class="placeholder"><div class="spinner"></div><p>در حال دریافت ویدیو...</p></div>';
+      
+      try {
+        // دریافت لینک مستقیم از googlevideo.com
+        const response = await fetch(\`/get-video/\${currentVideoData.id}\`);
+        const data = await response.json();
+        
+        if (!data.url) {
+          container.innerHTML = '<div class="placeholder"><p>⚠️ خطا در دریافت ویدیو</p></div>';
+          return;
+        }
+        
+        // پخش ویدیو
+        container.innerHTML = \`
+          <video controls autoplay playsinline 
+                 style="position:absolute;top:0;left:0;width:100%;height:100%;">
+            <source src="\${data.url}" type="video/mp4">
+          </video>
+        \`;
+        
+      } catch (error) {
+        container.innerHTML = '<div class="placeholder"><p>⚠️ خطا در پخش ویدیو</p></div>';
       }
     }
     
@@ -581,4 +707,4 @@ function generateMainPage() {
   </script>
 </body>
 </html>`;
-      }
+        }
