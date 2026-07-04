@@ -1,0 +1,21 @@
+name = "ajsports-unified-worker"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# ──────────────────────────────────────────────────────────────────────────
+# KV namespace — REQUIRED before first deploy.
+# Create it once with:
+#   wrangler kv namespace create KV_STORE
+#   wrangler kv namespace create KV_STORE --preview
+# Then paste the returned ids below (replace the placeholders).
+# ──────────────────────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "KV_STORE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_YOUR_KV_PREVIEW_NAMESPACE_ID"
+
+# Non-secret vars can go here. Anything sensitive (keys/tokens) should be
+# added as encrypted Secrets instead — see README.md "Environment variables"
+# for the full list and the exact `wrangler secret put ...` commands.
+[vars]
+ENVIRONMENT = "production"
