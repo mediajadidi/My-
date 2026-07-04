@@ -27,9 +27,3 @@ head_sampling_rate = 1
 # ========================================
 [vars]
 YOUTUBE_API_KEY = "AIzaSyCKBbpYov7TL3DzxhzuAzGq1ujkp77dHtU"
-
-# ========================================
-# ⚡ Asset Handling (برای فایل‌های استاتیک)
-# ========================================
-[assets]
-enabled = false
