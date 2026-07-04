@@ -1,4 +1,4 @@
-name = "aj-sports-unified-worker"
+name = "server"
 main = "worker.js"
 compatibility_date = "2025-06-01"
 
