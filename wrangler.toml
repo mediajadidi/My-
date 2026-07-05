@@ -1,35 +1,18 @@
-# ============================================================
-# wrangler.toml — AJ SPORTS ULTIMATE EDGE
-# ============================================================
+name = "bet-app-worker"
+main = "src/worker.js"
+compatibility_date = "2024-03-20"
 
-name = "aj-sports-ultimate-edge"
-main = "worker.js"
-compatibility_date = "2024-12-18"
+# فعال‌سازی تسویه خودکار هر ۱ دقیقه
+[triggers]
+crons = ["* * * * *"]
 
-# ============================================================
-# KV Namespace
-# ============================================================
-kv_namespaces = [
-  { binding = "KV_STORE", id = "4e70d1f40cbe4a5a9348004c7a41d60e", preview_id = "4e70d1f40cbe4a5a9348004c7a41d60e" }
-]
+# اتصال دیتابیس لبه
+[[kv_namespaces]]
+binding = "KV_STORE"
+id = "dec0712a730344b98848567f9006abdf" # این مقدار را پس از ساخت KV در کلودفلر جایگذاری کنید
 
-# ============================================================
-# Environment Variables (Secret)
-# ============================================================
 [vars]
-ENVIRONMENT = "production"
-
-# CLOUDINARY
-CLOUDINARY_CLOUD_NAME = "dwgagoxp1"
-CLOUDINARY_UPLOAD_PRESET = "ml_default"
-
-# Supabase
 SUPABASE_URL = "https://ivgsmoszivukvdegquxp.supabase.co"
-
-# ============================================================
-# Secrets (must be set with `wrangler secret put`)
-# ============================================================
-# JWT_SECRET = "a7f3k9m2p8q1r5s6t4u0v3w7x2y8z1b4c6d9e3f0g5h2i7j1k4l8m3n6o0"
-# FOOTBALL_API_KEY = "3e005c1a61fca98cfb09f2c90b55bcefe5c9e4119a9ba8dbfa32d35bb0a5988f"
-# SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2Z3Ntb3N6aXZ1a3ZkZWdxdXhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5Mzg0NDQsImV4cCI6MjA3MzUxNDQ0NH0.B0UslNCyxba9uMs80DDGQ0XfQQsSE3THHfsSDaG9V8o"
-# SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2Z3Ntb3N6aXZ1a3ZkZWdxdXhwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NzkzODQ0NCwiZXhwIjoyMDczNTE0NDQ0fQ.a3IWC6Qqtso6Bug6rnswaBFLTcxuyMh0QWK7c7VhaCI"
+SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2Z3Ntb3N6aXZ1a3ZkZWdxdXhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5Mzg0NDQsImV4cCI6MjA3MzUxNDQ0NH0.B0UslNCyxba9uMs80DDGQ0XfQQsSE3THHfsSDaG9V8o"
+# توجه: کلیدهای حساس مانند SUPABASE_JWT_SECRET و FOOTBALL_API_KEY باید از طریق داشبورد یا دستور wrangler secret put تنظیم شوند،
+# اما برای سادگی تست، در صورت نیاز می‌توانید اینجا قرار دهید.
