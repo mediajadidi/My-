@@ -153,6 +153,40 @@ export default {
         return jsonResponse({ success: true, profile });
       }
 
+      // --- مسیر اختصاصی آپلود عکس پروفایل (Cloudinary) ---
+      if (path === '/profile/avatar' && request.method === 'POST') {
+        const formData = await request.formData();
+        const file = formData.get('file');
+
+        if (!file) {
+          return jsonResponse({ error: 'فایلی ارسال نشده است' }, 400);
+        }
+
+        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD}/image/upload`;
+        const cloudinaryFormData = new FormData();
+        cloudinaryFormData.append('file', file);
+        cloudinaryFormData.append('api_key', env.CLOUDINARY_API_KEY);
+        // فراموش نکنید YOUR_UNSIGNED_PRESET_NAME را با نام پرزت خود در کلودینری جایگزین کنید
+        cloudinaryFormData.append('upload_preset', 'Ajsports'); 
+
+        const cloudRes = await fetch(cloudinaryUrl, {
+          method: 'POST',
+          body: cloudinaryFormData
+        });
+
+        const cloudData = await cloudRes.json();
+
+        if (cloudData.secure_url) {
+          const profile = await env.KV_STORE.get(profileKey, 'json');
+          profile.avatar_url = cloudData.secure_url;
+          await env.KV_STORE.put(profileKey, JSON.stringify(profile));
+
+          return jsonResponse({ success: true, avatar_url: cloudData.secure_url });
+        }
+
+        return jsonResponse({ error: 'خطا در آپلود تصویر به کلودینری' }, 500);
+      }
+
       // --- Matches Proxy with Edge Caching ---
       if (path === '/matches' && request.method === 'GET') {
         const date = new Date().toISOString().split('T')[0];
@@ -355,4 +389,3 @@ export default {
     } while (cursor);
   }
 };
-
